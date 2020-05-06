@@ -1,0 +1,207 @@
+---
+title: 'Practical Machine Learning Course Project : Prediction Assignment'
+author: "Cecilia Cruz-Ram, MD DPCOM"
+date: "05/06/2020"
+output: 
+   github_document:
+      toc: true
+   html_document:
+      toc: true
+      self_contained: true
+fontsize: 9pt
+geometry: margin = 0.25in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Instructions:
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+In this project, the goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+The goal is to predict the manner in which the exercise was done.
+
+## Simulations:
+
+A. Free Up Memory
+```{r}
+rm(list=ls())
+```
+
+B. Setwd
+```{r}
+setwd("~/Documents/Files/Zetch/Online Courses/Data Science Specialization Feb18/R/Practical Machine Learning")
+```
+
+C. Load Data
+```{r}
+library(caret)
+library(knitr)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+set.seed(12345)
+```
+
+```{r}
+# Set the URL for the download
+UrlTrain <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+UrlTest  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+# Download Datasets
+training <- read.csv(url(UrlTrain))
+testing  <- read.csv(url(UrlTest))
+
+# Create a partition with the training dataset 
+inTrain  <- createDataPartition(training$classe, p=0.7, list=FALSE)
+TrainSet <- training[inTrain, ]
+TestSet  <- training[-inTrain, ]
+dim(TrainSet)
+dim(TestSet)
+```
+   
+   Data sets consists of 5885 values with 160 variables.
+
+D. Clean and Pre-process Data
+
+   Remove values with Near Zero Variance (NZV).
+```{r}
+NZV <- nearZeroVar(TrainSet)
+TrainSet <- TrainSet[, -NZV]
+TestSet  <- TestSet[, -NZV]
+dim(TrainSet)
+dim(TestSet)
+```
+
+   Remove values with NA.
+```{r}
+AllNA    <- sapply(TrainSet, function(x) mean(is.na(x))) > 0.95
+TrainSet <- TrainSet[, AllNA==FALSE]
+TestSet  <- TestSet[, AllNA==FALSE]
+dim(TrainSet)
+dim(TestSet)
+```
+
+   Remove identification only variables (columns 1 to 5)
+```{r}
+TrainSet <- TrainSet[, -(1:5)]
+TestSet  <- TestSet[, -(1:5)]
+dim(TrainSet)
+dim(TestSet)
+```
+
+   The number of variables has been reduced to 54.
+
+E. Analyze Data
+
+```{r}
+corMatrix <- cor(TrainSet[, -54])
+corrplot(corMatrix, order = "FPC", method = "circle", type = "lower", 
+         tl.cex = 0.35, tl.col = rgb(0, 0, 0))
+```
+
+   The highly correlated variables are shown in dark colors in the graph above.
+
+F. Prediction Modelling
+
+   Three methods will be applied to model the regressions (in the Train dataset) and the one with higher accuracy when applied to the Test dataset will be used for the quiz predictions. The methods are: Random Forests, Decision Tree and Generalized Boosted Model.
+   
+   A Confusion Matrix is plotted at the end of each analysis to better visualize the accuracy of the models.
+   
+   1) Random Forest
+```{r}
+# Model fit
+set.seed(12345)
+controlRF <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+modFitRandForest <- train(classe ~ ., data = TrainSet, method = "rf",
+                          trControl = controlRF)
+modFitRandForest$finalModel
+```
+
+```{r}
+# Prediction on Test Dataset
+predictRandForest <- predict(modFitRandForest, newdata = TestSet)
+confMatRandForest <- confusionMatrix(predictRandForest, TestSet$classe)
+confMatRandForest
+```
+
+```{r}
+# Plot Matrix Results
+plot(confMatRandForest$table, col = confMatRandForest$byClass, 
+     main = paste("Random Forest Accuracy =",
+                  round(confMatRandForest$overall['Accuracy'], 3)))
+```
+
+ 2) Decision Tree
+```{r}
+# Model fit
+set.seed(12345)
+modFitDecTree <- rpart(classe ~ ., data = TrainSet, method = "class")
+fancyRpartPlot(modFitDecTree)
+```
+
+```{r}
+# Prediction on Test Dataset
+predictDecTree <- predict(modFitDecTree, newdata = TestSet, type = "class")
+confMatDecTree <- confusionMatrix(predictDecTree, TestSet$classe)
+confMatDecTree
+```
+
+```{r}
+# Plot Matrix Results
+plot(confMatDecTree$table, col = confMatDecTree$byClass, 
+     main = paste("Decision Tree Accuracy =",
+                  round(confMatDecTree$overall['Accuracy'], 3)))
+```
+
+   3) Generalized Boosted Model
+```{r}
+# Model fit
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modFitGBM  <- train(classe ~ ., data = TrainSet, method = "gbm",
+                    trControl = controlGBM, verbose = FALSE)
+modFitGBM$finalModel
+```
+
+```{r}
+# Prediction on Test Dataset
+predictGBM <- predict(modFitGBM, newdata=TestSet)
+confMatGBM <- confusionMatrix(predictGBM, TestSet$classe)
+confMatGBM
+```
+
+```{r}
+# Plot Matrix Results
+plot(confMatGBM$table, col = confMatGBM$byClass, 
+     main = paste("GBM Accuracy =", round(confMatGBM$overall['Accuracy'], 3)))
+```
+
+G. Model Application to Test Data
+
+   The accuracy of the 3 regression modelling methods are:
+
+      Random Forest : 0.999
+      Decision Tree : 0.734
+      GBM           : 0.987
+
+   The Random Forest model will be applied to predict the 20 quiz results (testing dataset).
+   
+```{r}
+predictTEST <- predict(modFitRandForest, newdata=testing)
+predictTEST
+```
+____________________________________
+
+### References
+
+1. Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+2. http://groupware.les.inf.puc-rio.br/har, visited 2015/12/25
